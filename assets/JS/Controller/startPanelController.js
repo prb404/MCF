@@ -3,147 +3,170 @@
 var App = App || {};
 
 $(document).ready(function () {
-        // console.log('Document ready event triggered');
+    function handleFileLoad(fileName, alertMessage = null) {
+        App.state.appState.fileName = fileName; // Ensure fileName is set in the appState
+        App.statistics.displayStatistics();
+        App.utilities.updateURL('preview', fileName, App.state.appState.selectedIDs); // Update the URL with the file name and selected IDs
+        App.utilities.updatePageTitle(fileName); // Update the page title with the file name
 
-function handleFileLoad(fileName) {
-    // console.log('handleFileLoad:', fileName);  // Debug log
-    App.state.appState.fileName = fileName; // Ensure fileName is set in the appState
-    App.statistics.displayStatistics();
-    App.utilities.updateURL('preview', fileName, App.state.appState.selectedIDs); // Update the URL with the file name and selected IDs
-    App.utilities.updatePageTitle(fileName); // Update the page title with the file name
-}
+        if (alertMessage) {
+            App.alerts.showAlert(alertMessage);
+        }
 
-function handleFileSelect(event) {
-    const file = event.target.files ? event.target.files[0] : null;
-    if (file) {
-        App.fileHandling.parseCSV(file)
-            .then(() => {
-                handleFileLoad(file.name);
-
-                // Wait for the tree to be fully loaded before selecting the first node
-                const waitForTreeLoad = new Promise((resolve) => {
-                    $('#tree').one('loaded.jstree', function () {
-                        resolve();
-                    });
-                    $('#tree').jstree(true).refresh(); // Force a refresh to trigger the loaded event
-                });
-
-                waitForTreeLoad.then(() => {
-                    setTimeout(() => {
-                        const firstNodeId = $('#tree').jstree(true).get_node('#').children[0];
-                        $('#tree').jstree('select_node', firstNodeId);
-                        App.state.setSelectedIDs([firstNodeId]);
-                    }, 100); // Small delay to ensure the tree is rendered
-                });
-            })
-            .catch(error => console.error('Error parsing file:', error));
-        App.alerts.showAlert(`✅ Uploaded file parsed`);
+        cleanInvalidSelections(); // Deselect invalid nodes after loading the file
     }
-}
 
+    function waitForTreeToLoad() {
+        return new Promise(resolve => {
+            if ($('#tree').jstree(true)) {
+                $('#tree').one('loaded.jstree', function() {
+                    resolve();
+                });
+            } else {
+                resolve(); // Resolve immediately if the tree is not yet initialized
+            }
+        });
+    }
 
-
-function handleSampleFileSelect(path, fileName) {
-    App.fileHandling.fetchAndParseCSV(path, fileName)
-        .then(() => {
-            handleFileLoad(fileName);
-            // Automatically select the first node after sample file is loaded
-            $('#tree').one('loaded.jstree', function () {
+    function selectFirstNode() {
+        return new Promise(resolve => {
+            waitForTreeToLoad().then(() => {
                 const firstNodeId = $('#tree').jstree(true).get_node('#').children[0];
                 $('#tree').jstree('select_node', firstNodeId);
                 App.state.setSelectedIDs([firstNodeId]);
+                resolve();
             });
-        })
-        .catch(error => {
-            console.error('Error parsing file:', error);
-            App.alerts.showAlert(`❌ Error parsing file: ${fileName}`, 'danger');
         });
-}
+    }
 
+    function cleanInvalidSelections() {
+        return new Promise(resolve => {
+            setTimeout(() => {
+                const { selectedIDs } = App.utilities.getURLParams();
+                const validIDs = App.state.appState.data.map(item => item['ID number']);
 
-function handleURLFile() {
-    const { mode, fileName, selectedIDs } = App.utilities.getURLParams();
-    if (fileName) {
-        const filePath = fileName.startsWith('http') ? fileName : `framework_samples/${fileName}`;
-        App.state.appState.fileName = fileName; // Ensure fileName is set in the appState
-        App.utilities.updatePageTitle(fileName); // Update the page title with the file name
-        if (filePath.startsWith('http')) {
-            App.fileHandling.fetchAndParseCSV(filePath, fileName)
-                .then(() => {
-                    handleFileLoad(fileName);
-                    if (mode === 'stats') {
-                        const offcanvasElement = document.getElementById('offcanvasStats');
-                        if (offcanvasElement) {
-                            const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
-                            bsOffcanvas.show();
-                            App.utilities.updateURL('stats', fileName, selectedIDs);
-                        }
-                    }
-                    if (selectedIDs && selectedIDs.length > 0) {
-                        $('#tree').one('loaded.jstree', function () {
-                            $('#tree').jstree('deselect_all');
-                            $('#tree').jstree('select_node', selectedIDs);
-                            App.state.setSelectedIDs(selectedIDs);
-                        });
-                    } else {
-                        // Automatically select the first node if no IDs are in the URL
-                        $('#tree').one('loaded.jstree', function () {
-                            const firstNodeId = $('#tree').jstree(true).get_node('#').children[0];
-                            $('#tree').jstree('select_node', firstNodeId);
-                            App.state.setSelectedIDs([firstNodeId]);
-                        });
-                    }
-                })
-                .catch(error => {
-                    console.error('Error fetching and parsing file from URL:', error);
-                    App.alerts.showAlert(`❌ Error fetching file from URL: ${fileName}`, 'danger');
-                });
-        } else {
-            $.getJSON('framework_samples/samples.json', function(sampleFiles) {
-                const sampleFile = sampleFiles.find(file => file.path === filePath);
-                if (sampleFile) {
-                    App.fileHandling.fetchAndParseCSV(sampleFile.path, fileName)
-                        .then(() => {
-                            handleFileLoad(fileName);
-                            App.alerts.showAlert(`✅ Sample loaded: ${fileName}`);
-                            if (mode === 'stats') {
-                                const offcanvasElement = document.getElementById('offcanvasStats');
-                                if (offcanvasElement) {
-                                    const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
-                                    bsOffcanvas.show();
-                                    App.utilities.updateURL('stats', fileName, selectedIDs);
-                                }
-                            }
-                            if (selectedIDs && selectedIDs.length > 0) {
-                                $('#tree').one('loaded.jstree', function () {
-                                    $('#tree').jstree('deselect_all');
-                                    $('#tree').jstree('select_node', selectedIDs);
-                                    App.state.setSelectedIDs(selectedIDs);
-                                });
-                            } else {
-                                // Automatically select the first node if no IDs are in the URL
-                                $('#tree').one('loaded.jstree', function () {
-                                    const firstNodeId = $('#tree').jstree(true).get_node('#').children[0];
-                                    $('#tree').jstree('select_node', firstNodeId);
-                                    App.state.setSelectedIDs([firstNodeId]);
-                                });
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error fetching and parsing file from URL:', error);
-                            App.alerts.showAlert(`❌ Error fetching file from samples: ${fileName}`, 'danger');
-                        });
-                } else {
-                    App.alerts.showAlert(`❌ File not found in samples: ${fileName}`, 'danger');
-                    window.history.replaceState({}, '', window.location.pathname + "#");
+                const invalidIDs = selectedIDs.filter(id => !validIDs.includes(id));
+                if (invalidIDs.length > 0) {
+                    $('#tree').jstree('deselect_node', invalidIDs);
+                    App.state.setSelectedIDs(selectedIDs.filter(id => validIDs.includes(id)));
+                    App.details.showDetails([]);
                 }
-            });
+                resolve();
+            }, 100); // Delay to ensure tree is properly loaded
+        });
+    }
+
+    function handleFileSelect(event) {
+        const file = event.target.files ? event.target.files[0] : null;
+        if (file) {
+            App.fileHandling.parseCSV(file)
+                .then(() => {
+                    handleFileLoad(file.name, `✅ Uploaded file parsed`);
+                    // Attendre que l'arbre soit complètement chargé avant de sélectionner la première node
+                    selectFirstNode().then(cleanInvalidSelections); // Deselect invalid nodes after loading the file
+                })
+                .catch(error => console.error('Error parsing file:', error));
         }
     }
-}
 
+    function handleSampleFileSelect(path, fileName) {
+        App.fileHandling.fetchAndParseCSV(path, fileName)
+            .then(() => {
+                handleFileLoad(fileName);
+                // Sélectionner automatiquement la première node après le chargement du fichier sample
+                selectFirstNode().then(cleanInvalidSelections); // Deselect invalid nodes after loading the file
+            })
+            .catch(error => {
+                console.error('Error parsing file:', error);
+                App.alerts.showAlert(`❌ Error parsing file: ${fileName}`, 'danger');
+            });
+    }
+
+    function handleURLFile() {
+        const { mode, fileName, selectedIDs } = App.utilities.getURLParams();
+        if (fileName) {
+            const filePath = fileName.startsWith('http') ? fileName : `framework_samples/${fileName}`;
+            App.state.appState.fileName = fileName; // S'assurer que fileName est défini dans appState
+            App.utilities.updatePageTitle(fileName); // Mettre à jour le titre de la page avec le nom du fichier
+            if (filePath.startsWith('http')) {
+                App.fileHandling.fetchAndParseCSV(filePath, fileName)
+                    .then(() => {
+                        handleFileLoad(fileName, `✅ Loaded file from URL: ${fileName}`);
+                        if (mode === 'stats') {
+                            const offcanvasElement = document.getElementById('offcanvasStats');
+                            if (offcanvasElement) {
+                                const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
+                                bsOffcanvas.show();
+                                App.utilities.updateURL('stats', fileName, selectedIDs);
+                            }
+                        }
+                        if (selectedIDs && selectedIDs.length > 0) {
+                            $('#tree').one('loaded.jstree', function () {
+                                $('#tree').jstree('deselect_all');
+                                $('#tree').jstree('select_node', selectedIDs);
+                                App.state.setSelectedIDs(selectedIDs);
+                            });
+                        } else {
+                            // Sélectionner automatiquement la première node si aucun ID n'est dans l'URL
+                            selectFirstNode();
+                        }
+                        cleanInvalidSelections(); // Deselect invalid nodes after loading the file
+                    })
+                    .catch(error => {
+                        console.error('Error fetching and parsing file from URL:', error);
+                        App.alerts.showAlert(`❌ Error fetching file from URL: ${fileName}`, 'danger');
+                    });
+            } else {
+                $.getJSON('framework_samples/samples.json', function(sampleFiles) {
+                    const sampleFile = sampleFiles.find(file => file.path === filePath);
+                    if (sampleFile) {
+                        App.fileHandling.fetchAndParseCSV(sampleFile.path, fileName)
+                            .then(() => {
+                                handleFileLoad(fileName, `✅ Sample loaded: ${fileName}`);
+                                if (mode === 'stats') {
+                                    const offcanvasElement = document.getElementById('offcanvasStats');
+                                    if (offcanvasElement) {
+                                        const bsOffcanvas = bootstrap.Offcanvas.getOrCreateInstance(offcanvasElement);
+                                        bsOffcanvas.show();
+                                        App.utilities.updateURL('stats', fileName, selectedIDs);
+                                    }
+                                }
+                                if (selectedIDs && selectedIDs.length > 0) {
+                                    $('#tree').one('loaded.jstree', function () {
+                                        $('#tree').jstree('deselect_all');
+                                        $('#tree').jstree('select_node', selectedIDs);
+                                        App.state.setSelectedIDs(selectedIDs);
+                                    });
+                                } else {
+                                    // Sélectionner automatiquement la première node si aucun ID n'est dans l'URL
+                                    selectFirstNode();
+                                }
+                                cleanInvalidSelections(); // Deselect invalid nodes after loading the file
+                            })
+                            .catch(error => {
+                                console.error('Error fetching and parsing file from URL:', error);
+                                App.alerts.showAlert(`❌ Error fetching file from samples: ${fileName}`, 'danger');
+                            });
+                    } else {
+                        App.alerts.showAlert(`❌ File not found in samples: ${fileName}`, 'danger');
+                        window.history.replaceState({}, '', window.location.pathname + "#");
+                    }
+                });
+            }
+        }
+    }
 
     $('#csvFileInput').on('change', handleFileSelect);
+
+    $('#sampleFilesDropdown').on('click', '.dropdown-item', function(e) {
+        e.preventDefault();
+        const filePath = $(this).data('path');
+        const fileName = filePath.split('/').pop(); // Extract the file name from the path
+        const fileMessage = $(this).data('message');
+        if (filePath && fileName) {
+            handleSampleFileSelect(filePath, fileName);
+        }
+    });
 
     $('#search').on('input', function () {
         const query = $(this).val();
@@ -189,28 +212,23 @@ function handleURLFile() {
         App.utilities.updateSelectedIDsInURL();
     }, 300);
 
-$('#tree').on('select_node.jstree', function (e, data) {
-    const nodes = data.selected.map(id => {
-        const node = data.instance.get_node(id);
-        console.log("Node selected: ", node); // Log the selected node
-        if (!node.original) {
-            console.error("Selected node has no original data:", node);
+    $('#tree').on('select_node.jstree', function (e, data) {
+        const nodes = data.selected.map(id => {
+            const node = data.instance.get_node(id);
+            return node.original || null;
+        }).filter(node => node);
+        App.state.appState.currentNode = nodes;
+        const fileName = App.state.appState.fileName;
+        if (!fileName) {
+            console.error('File name is missing');
+            return;
         }
-        return node.original || null;
-    }).filter(node => node);
-    App.state.appState.currentNode = nodes;
-    const fileName = App.state.appState.fileName;
-    if (!fileName) {
-        console.error('File name is missing');
-        return;
-    }
-    nodes.forEach(node => {
-        console.log("Calling selectNode for ID: ", node['ID number']); // Log the ID being selected
-        App.state.selectNode(node['ID number']);
-    });
+        nodes.forEach(node => {
+            App.state.selectNode(node['ID number']);
+        });
         App.details.showDetails(nodes);
-    updateSelectedIDsInURLDebounced(); // Update URL with selected IDs
-});
+        updateSelectedIDsInURLDebounced(); // Update URL with selected IDs
+    });
 
     $('#tree').on('deselect_node.jstree', function (e, data) {
         const nodes = data.instance.get_selected(true).map(node => node.original).filter(node => node !== null);
@@ -220,7 +238,6 @@ $('#tree').on('select_node.jstree', function (e, data) {
             console.error('File name is missing');
             return;
         }
-        console.log("Calling deselectNode for ID: ", data.node.original['ID number']); // Log the ID being deselected
         data.node.original && App.state.deselectNode(data.node.original['ID number']);
         App.details.showDetails(nodes);
 
@@ -232,20 +249,6 @@ $('#tree').on('select_node.jstree', function (e, data) {
         App.fileHandling.populateSampleFilesDropdown(data);
     });
 
-    // $('#sampleFilesDropdown').on('changed.bs.select', function(e, clickedIndex, isSelected, previousValue) {
-    //     const selectedOption = $(this).find('option').eq(clickedIndex);
-    //     const filePath = selectedOption.data('path');
-    //     const fileName = selectedOption.text();
-    //     if (filePath && fileName) {
-    //         handleSampleFileSelect(filePath, fileName);
-    //     } else {
-    //         console.error("No filePath or fileName found in dropdown selection");
-    //     }
-    // });
-
-    //     // Initialize bootstrap-select
-    // $('#sampleFilesDropdown').selectpicker();
-
     handleURLFile(); // Call this function when the document is ready to handle file from URL
 
     // Call handleURLFile on document ready if no framework is already loaded
@@ -253,4 +256,3 @@ $('#tree').on('select_node.jstree', function (e, data) {
         handleURLFile();
     }
 });
-
