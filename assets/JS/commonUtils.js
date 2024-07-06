@@ -88,7 +88,17 @@ App.utils = (function() {
 // alertsSystem
 
 App.alerts = (function() {
+    const displayedAlerts = new Set();
+
     function showAlert(message, type = 'info') {
+        const alertId = `${type}-${message}`;
+
+        if (displayedAlerts.has(alertId)) {
+            return; // Alert already displayed, do nothing
+        }
+
+        displayedAlerts.add(alertId);
+
         const alertHtml = `
             <div class="alert alert-${type} alert-dismissible fade show" role="alert">
                 ${message}
@@ -96,9 +106,11 @@ App.alerts = (function() {
             </div>
         `;
         $('#alert-container').append(alertHtml);
+
         setTimeout(() => {
-            $('.alert').alert('close');
-        }, 5000);
+            $(`.alert:contains("${message}")`).alert('close');
+            displayedAlerts.delete(alertId);
+        }, 1000);
     }
 
     function initializeTooltips() {
